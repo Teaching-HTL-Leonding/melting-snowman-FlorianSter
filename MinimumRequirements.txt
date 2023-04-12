@@ -1,0 +1,58 @@
+using FluentValidation;
+using MeltingSnowman.Logic;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new() {Title = "Melting-Snowman", Version = "v1"});
+});
+builder.Services.AddScoped<IValidator<string>, GuessValidator>();
+var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+int prevGuesses = 0;
+MeltingSnowmanGame game = new MeltingSnowmanGame();
+
+app.MapGet("/game", () => 
+{
+    return new GetGameResponse(game.Word, prevGuesses);
+}).Produces<GetGameResponse>(StatusCodes.Status200OK).WithOpenApi(o =>
+{
+    o.Description = "Returns the status of the game";
+    o.Responses[((int)StatusCodes.Status200OK).ToString()].Description = "Successful.";
+    return o;
+});
+
+app.MapPost("/game", (string letter, IValidator<string> validator) => 
+{
+    var vailidationResult = validator.Validate(letter);
+    if (!vailidationResult.IsValid){
+        return Results.ValidationProblem(vailidationResult.ToDictionary());
+    }
+    int occurences = game.Guess(letter);
+    prevGuesses++;
+    return Results.Ok(new PostGameResponse(occurences, game.Word, prevGuesses));
+}).Produces<GetGameResponse>(StatusCodes.Status200OK)
+.Produces<GetGameResponse>(StatusCodes.Status400BadRequest).WithOpenApi(o =>
+{
+    o.Description = "Plays a round.";
+    o.Responses[((int)StatusCodes.Status200OK).ToString()].Description = "Successful.";
+    o.Responses[((int)StatusCodes.Status400BadRequest).ToString()].Description = "Not Successful.";
+    return o;
+});
+
+
+app.Run();
+
+record GetGameResponse(string WordToGuess, int NumberOfGuesses);
+record PostGameResponse(int Occurences, string WordToGuess, int NumberOfGuesses);
+
+class GuessValidator: AbstractValidator<string>
+{
+    public GuessValidator(){
+        RuleFor(c => c).NotNull().Length(1,1);
+    }
+}
